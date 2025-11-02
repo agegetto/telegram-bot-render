@@ -10,7 +10,8 @@ from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import threading
+import asyncio
+from threading import Thread
 
 # Configurazione logging
 logging.basicConfig(
@@ -21,7 +22,7 @@ logging.basicConfig(
 # Token del bot
 TOKEN = os.environ.get('BOT_TOKEN', '7460127087:AAFlfEpwUGGY-mgUO0bJPaigvf3y8SkKNvs')
 
-# URL della Mini App (da aggiornare dopo il deployment)
+# URL della Mini App
 MINI_APP_URL = os.environ.get('MINI_APP_URL', 'https://YOUR-USERNAME.github.io/telegram-miniapp/index.html')
 
 # Database URL da Render
@@ -249,6 +250,11 @@ def handle_action():
     
     return jsonify(response)
 
+@flask_app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'ok'})
+
 # Comandi Telegram
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start - apre la Mini App"""
@@ -359,33 +365,40 @@ async def kmm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = "\n".join(message_lines)
     await update.message.reply_text(message)
 
-def run_flask():
-    """Avvia il server Flask"""
-    port = int(os.environ.get('PORT', 5000))
-    flask_app.run(host='0.0.0.0', port=port, debug=False)
-
-def main():
-    """Avvia il bot"""
-    init_database()
-    
-    # Avvia Flask in un thread separato
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Crea l'applicazione Telegram
+def run_bot():
+    """Avvia il bot Telegram"""
     application = Application.builder().token(TOKEN).build()
     
-    # Handler dei comandi
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("cals", cals_command))
     application.add_handler(CommandHandler("calm", calm_command))
     application.add_handler(CommandHandler("kmm", kmm_command))
     
-    print("✅ Bot avviato con Mini App e PostgreSQL su Render!")
-    print(f"🌐 API Flask in ascolto sulla porta {os.environ.get('PORT', 5000)}")
+    print("✅ Bot Telegram avviato!")
+    
+    # Usa run_polling con configurazione corretta per Render
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True,
+        close_loop=False
+    )
+
+def main():
+    """Avvia tutti i servizi"""
+    print("🚀 Inizializzazione servizi...")
+    init_database()
+    
+    # Avvia il bot in un thread separato
+    bot_thread = Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Avvia Flask (Gunicorn lo gestirà in produzione)
+    port = int(os.environ.get('PORT', 10000))
+    print(f"✅ API Flask avviata sulla porta {port}")
     print(f"📱 Mini App URL: {MINI_APP_URL}")
     
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    from waitress import serve
+    serve(flask_app, host='0.0.0.0', port=port)
 
 if __name__ == '__main__':
     main()
