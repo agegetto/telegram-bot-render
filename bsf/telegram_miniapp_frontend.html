@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Bot</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 10px;
+            color: var(--tg-theme-text-color);
+            font-size: 24px;
+        }
+
+        .status-bar {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .status-bar .time {
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--tg-theme-text-color);
+        }
+
+        .status-bar .date {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999);
+            margin-top: 5px;
+        }
+
+        .timer {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+            display: none;
+        }
+
+        .timer.active {
+            display: block;
+        }
+
+        .timer .label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .timer .time-display {
+            font-size: 36px;
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+
+        .button-grid {
+            display: grid;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 18px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            color: #333;
+        }
+
+        .btn-warning {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            color: #333;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: #333;
+        }
+
+        .btn-info {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            color: #333;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            background: var(--tg-theme-secondary-bg-color, #f8f9fa);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+        }
+
+        .stats h3 {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #999);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .stats .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--tg-theme-text-color);
+        }
+
+        .km-input-section {
+            background: var(--tg-theme-secondary-bg-color, #f8f9fa);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .km-input-section.active {
+            display: block;
+        }
+
+        .km-input-section h3 {
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .input-group input {
+            flex: 1;
+            min-width: 100px;
+            padding: 12px;
+            border: 2px solid var(--tg-theme-button-color, #3390ec);
+            border-radius: 8px;
+            font-size: 16px;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color);
+        }
+
+        .input-group button {
+            padding: 12px 20px;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .message {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            text-align: center;
+            display: none;
+        }
+
+        .message.active {
+            display: block;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .blocked-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .blocked-overlay.active {
+            display: flex;
+        }
+
+        .blocked-message {
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            text-align: center;
+            max-width: 300px;
+        }
+
+        .blocked-message h2 {
+            color: #e74c3c;
+            margin-bottom: 10px;
+        }
+
+        .blocked-message p {
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏱️ Timesheet Bot</h1>
+
+        <div class="status-bar">
+            <div class="time" id="currentTime">--:--</div>
+            <div class="date" id="currentDate">--/--/----</div>
+        </div>
+
+        <div id="message" class="message"></div>
+
+        <div class="timer" id="timer">
+            <div class="label">Tempo trascorso</div>
+            <div class="time-display" id="timerDisplay">00:00:00</div>
+        </div>
+
+        <div class="button-grid" id="mainMenu">
+            <button class="btn btn-primary" onclick="handleInizio()">▶️ INIZIO</button>
+            <button class="btn btn-warning" onclick="handleMalattia()">🏥 MALATTIA</button>
+            <button class="btn btn-danger" onclick="handleFerie()">🏖️ FERIE</button>
+        </div>
+
+        <div class="button-grid" id="submenu1" style="display:none;">
+            <button class="btn btn-success" onclick="handleFine()">⏹️ FINE</button>
+        </div>
+
+        <div class="button-grid" id="submenu2" style="display:none;">
+            <button class="btn btn-primary" onclick="handleInizio()">▶️ INIZIO</button>
+            <button class="btn btn-info" onclick="handleGiornata()">📅 GIORNATA</button>
+        </div>
+
+        <div class="stats">
+            <h3>Oggi</h3>
+            <div class="value" id="todayHours">0h 0m</div>
+        </div>
+
+        <div class="stats">
+            <h3>Questa settimana</h3>
+            <div class="value" id="weekHours">0h 0m</div>
+        </div>
+
+        <div class="stats">
+            <h3>Questo mese</h3>
+            <div class="value" id="monthHours">0h 0m</div>
+        </div>
+
+        <div class="km-input-section" id="kmSection">
+            <h3>🚗 Inserisci Chilometri</h3>
+            <div class="input-group">
+                <input type="number" id="kmInput" placeholder="Es: 45.5" step="0.1">
+                <input type="text" id="comuneInput" placeholder="Comune (default: Imola)">
+                <button onclick="handleKm()">Invia</button>
+            </div>
+        </div>
+
+        <div class="button-grid">
+            <button class="btn btn-info" onclick="toggleKmSection()">🚗 Aggiungi KM</button>
+        </div>
+
+        <div class="stats">
+            <h3>KM questo mese</h3>
+            <div class="value" id="monthKm">0 km</div>
+        </div>
+    </div>
+
+    <div class="blocked-overlay" id="blockedOverlay">
+        <div class="blocked-message">
+            <h2>🚫 Bloccato</h2>
+            <p>Sei bloccato fino alle 23:59 di oggi</p>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        let startTime = null;
+        let timerInterval = null;
+        let isBlocked = false;
+
+        // Funzione per inviare dati al bot
+        async function sendToBot(action, data = {}) {
+            try {
+                const response = await fetch('YOUR_BOT_API_URL', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        user_id: tg.initDataUnsafe?.user?.id,
+                        action: action,
+                        data: data
+                    })
+                });
+                return await response.json();
+            } catch (error) {
+                console.error('Errore:', error);
+                return null;
+            }
+        }
+
+        // Aggiorna ora e data
+        function updateClock() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = 
+                now.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+            document.getElementById('currentDate').textContent = 
+                now.toLocaleDateString('it-IT');
+        }
+
+        // Timer
+        function startTimer() {
+            startTime = Date.now();
+            timerInterval = setInterval(updateTimer, 1000);
+            document.getElementById('timer').classList.add('active');
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+            document.getElementById('timer').classList.remove('active');
+        }
+
+        function updateTimer() {
+            if (!startTime) return;
+            const elapsed = Date.now() - startTime;
+            const hours = Math.floor(elapsed / 3600000);
+            const minutes = Math.floor((elapsed % 3600000) / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            
+            document.getElementById('timerDisplay').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        // Mostra menu
+        function showMenu(menu) {
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('submenu1').style.display = 'none';
+            document.getElementById('submenu2').style.display = 'none';
+            
+            if (menu === 'main') {
+                document.getElementById('mainMenu').style.display = 'grid';
+            } else if (menu === 'submenu1') {
+                document.getElementById('submenu1').style.display = 'grid';
+            } else if (menu === 'submenu2') {
+                document.getElementById('submenu2').style.display = 'grid';
+            }
+        }
+
+        // Mostra messaggio
+        function showMessage(text, type = 'info') {
+            const msg = document.getElementById('message');
+            msg.textContent = text;
+            msg.className = `message ${type} active`;
+            setTimeout(() => {
+                msg.classList.remove('active');
+            }, 3000);
+        }
+
+        // Blocca interfaccia
+        function blockUI() {
+            isBlocked = true;
+            document.getElementById('blockedOverlay').classList.add('active');
+            
+            // Sblocca a mezzanotte
+            const now = new Date();
+            const midnight = new Date(now);
+            midnight.setHours(23, 59, 59, 999);
+            const timeToMidnight = midnight - now;
+            
+            setTimeout(() => {
+                unblockUI();
+            }, timeToMidnight);
+        }
+
+        function unblockUI() {
+            isBlocked = false;
+            document.getElementById('blockedOverlay').classList.remove('active');
+            showMenu('main');
+        }
+
+        // Handler azioni
+        async function handleInizio() {
+            if (isBlocked) return;
+            
+            startTimer();
+            showMenu('submenu1');
+            showMessage('⏰ INIZIO registrato', 'success');
+            
+            await sendToBot('inizio');
+        }
+
+        async function handleFine() {
+            if (isBlocked) return;
+            
+            stopTimer();
+            showMenu('submenu2');
+            
+            const elapsed = Date.now() - startTime;
+            const minutes = Math.ceil(elapsed / 60000);
+            const roundedMinutes = Math.ceil(minutes / 15) * 15;
+            const hours = Math.floor(roundedMinutes / 60);
+            const mins = roundedMinutes % 60;
+            
+            showMessage(`⏱️ FINE: ${hours}h ${mins}m`, 'success');
+            
+            await sendToBot('fine', { minutes: roundedMinutes });
+            loadStats();
+        }
+
+        async function handleGiornata() {
+            if (isBlocked) return;
+            
+            const result = await sendToBot('giornata');
+            if (result) {
+                showMessage(`📅 Giornata completata: ${result.hours}h ${result.minutes}m`, 'success');
+            }
+            
+            blockUI();
+        }
+
+        async function handleMalattia() {
+            if (isBlocked) return;
+            
+            await sendToBot('malattia');
+            showMessage('🏥 MALATTIA registrata', 'info');
+            blockUI();
+        }
+
+        async function handleFerie() {
+            if (isBlocked) return;
+            
+            await sendToBot('ferie');
+            showMessage('🏖️ FERIE registrate', 'info');
+            blockUI();
+        }
+
+        function toggleKmSection() {
+            const section = document.getElementById('kmSection');
+            section.classList.toggle('active');
+        }
+
+        async function handleKm() {
+            const km = parseFloat(document.getElementById('kmInput').value);
+            const comune = document.getElementById('comuneInput').value.trim() || 'Imola';
+            
+            if (!km || km <= 0) {
+                showMessage('❌ Inserisci un valore valido', 'error');
+                return;
+            }
+            
+            await sendToBot('km', { km: km, comune: comune });
+            showMessage(`🚗 ${km} KM registrati - ${comune}`, 'success');
+            document.getElementById('kmInput').value = '';
+            document.getElementById('comuneInput').value = '';
+            toggleKmSection();
+            loadStats();
+        }
+
+        // Carica statistiche
+        async function loadStats() {
+            const stats = await sendToBot('get_stats');
+            if (stats) {
+                document.getElementById('todayHours').textContent = 
+                    `${stats.today_hours}h ${stats.today_minutes}m`;
+                document.getElementById('weekHours').textContent = 
+                    `${stats.week_hours}h ${stats.week_minutes}m`;
+                document.getElementById('monthHours').textContent = 
+                    `${stats.month_hours}h ${stats.month_minutes}m`;
+                document.getElementById('monthKm').textContent = 
+                    `${stats.month_km} km`;
+            }
+        }
+
+        // Inizializzazione
+        updateClock();
+        setInterval(updateClock, 1000);
+        loadStats();
+        setInterval(loadStats, 30000); // Aggiorna ogni 30 secondi
+    </script>
+</body>
+</html>
