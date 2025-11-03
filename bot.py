@@ -1,6 +1,6 @@
 import logging
-from datetime import datetime, timedelta, time
-from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
+from datetime import datetime, timedelta
+from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import pytz
 import math
@@ -10,13 +10,14 @@ from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from threading import Thread
 
 # Configurazione logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+
+logger = logging.getLogger(__name__)
 
 # Token del bot
 TOKEN = os.environ.get('BOT_TOKEN', '7460127087:AAFlfEpwUGGY-mgUO0bJPaigvf3y8SkKNvs')
@@ -89,7 +90,7 @@ def init_database():
         ''')
         
         conn.commit()
-        logging.info("Database PostgreSQL inizializzato correttamente")
+        logger.info("Database PostgreSQL inizializzato correttamente")
 
 def get_current_time():
     """Restituisce l'ora corrente in timezone italiano"""
@@ -335,8 +336,8 @@ def health():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start - mostra menu e Mini App"""
     user_id = update.effective_user.id
+    logger.info(f"Comando /start da user {user_id}")
     
-    # Imposta il pulsante menu per la Mini App
     await context.bot.set_chat_menu_button(
         chat_id=user_id,
         menu_button=MenuButtonWebApp(
@@ -345,7 +346,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
     
-    # Mostra la tastiera con i bottoni
     await update.message.reply_text(
         "✅ Bot inizializzato!\n\n"
         "Hai DUE modi per usare il bot:\n\n"
@@ -474,6 +474,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Gestisce i messaggi dai bottoni della tastiera"""
     user_id = update.effective_user.id
     text = update.message.text
+    logger.info(f"Messaggio ricevuto: {text} da user {user_id}")
     
     if is_blocked(user_id):
         await update.message.reply_text(
@@ -561,40 +562,45 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=ReplyKeyboardRemove()
         )
 
-def run_bot():
-    """Avvia il bot Telegram"""
-    application = Application.builder().token(TOKEN).build()
-    
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("menu", menu_command))
-    application.add_handler(CommandHandler("km", km_command))
-    application.add_handler(CommandHandler("cals", cals_command))
-    application.add_handler(CommandHandler("calm", calm_command))
-    application.add_handler(CommandHandler("kmm", kmm_command))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    
-    print("✅ Bot Telegram avviato!")
-    
-    application.run_polling(
-        allowed_updates=Update.ALL_TYPES,
-        drop_pending_updates=True,
-        close_loop=False
-    )
-
 def main():
-    """Avvia tutti i servizi"""
-    print("🚀 Inizializzazione servizi...")
-    init_database()
+    """Avvia tutti i servizi - SENZA THREADING"""
+    logger.info("🚀 Inizializzazione servizi...")
     
-    bot_thread = Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
-    port = int(os.environ.get('PORT', 10000))
-    print(f"✅ API Flask avviata sulla porta {port}")
-    print(f"📱 Mini App URL: {MINI_APP_URL}")
-    
-    from waitress import serve
-    serve(flask_app, host='0.0.0.0', port=port)
+    try:
+        init_database()
+        
+        # Crea applicazione bot
+        application = Application.builder().token(TOKEN).build()
+        
+        # Aggiungi handler
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("menu", menu_command))
+        application.add_handler(CommandHandler("km", km_command))
+        application.add_handler(CommandHandler("cals", cals_command))
+        application.add_handler(CommandHandler("calm", calm_command))
+        application.add_handler(CommandHandler("kmm", kmm_command))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+        
+        port = int(os.environ.get('PORT', 10000))
+        logger.info(f"✅ Bot configurato - API Flask sulla porta {port}")
+        logger.info(f"📱 Mini App URL: {MINI_APP_URL}")
+        
+        # Avvia Flask in un processo separato usando waitress
+        import multiprocessing
+        flask_process = multiprocessing.Process(target=lambda: __import__('waitress').serve(flask_app, host='0.0.0.0', port=port))
+        flask_process.start()
+        
+        logger.info("✅ Bot Telegram in avvio...")
+        
+        # Avvia bot con polling
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ ERRORE CRITICO: {e}", exc_info=True)
+        raise
 
 if __name__ == '__main__':
     main()
