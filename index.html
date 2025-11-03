@@ -475,7 +475,22 @@
                 showMessage(`📅 Giornata completata: ${result.hours}h ${result.minutes}m`, 'success');
             }
             
-            blockUI();
+            // Blocca solo i pulsanti timesheet, NON tutta l'app
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('submenu1').style.display = 'none';
+            document.getElementById('submenu2').style.display = 'none';
+            
+            showMessage('⚠️ Timesheet bloccato fino alle 23:59. Puoi ancora aggiungere KM.', 'info');
+            
+            // Sblocca a mezzanotte (solo per UI, server controlla comunque)
+            const now = new Date();
+            const midnight = new Date(now);
+            midnight.setHours(23, 59, 59, 999);
+            const timeToMidnight = midnight - now;
+            
+            setTimeout(() => {
+                showMenu('main');
+            }, timeToMidnight);
         }
 
         async function handleMalattia() {
@@ -483,7 +498,13 @@
             
             await sendToBot('malattia');
             showMessage('🏥 MALATTIA registrata', 'info');
-            blockUI();
+            
+            // Blocca solo timesheet
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('submenu1').style.display = 'none';
+            document.getElementById('submenu2').style.display = 'none';
+            
+            showMessage('⚠️ Timesheet bloccato fino alle 23:59. Puoi ancora aggiungere KM.', 'info');
         }
 
         async function handleFerie() {
@@ -491,7 +512,13 @@
             
             await sendToBot('ferie');
             showMessage('🏖️ FERIE registrate', 'info');
-            blockUI();
+            
+            // Blocca solo timesheet
+            document.getElementById('mainMenu').style.display = 'none';
+            document.getElementById('submenu1').style.display = 'none';
+            document.getElementById('submenu2').style.display = 'none';
+            
+            showMessage('⚠️ Timesheet bloccato fino alle 23:59. Puoi ancora aggiungere KM.', 'info');
         }
 
         function toggleKmSection() {
@@ -516,7 +543,7 @@
             loadStats();
         }
 
-        // Carica statistiche
+        // Carica statistiche e stato blocco
         async function loadStats() {
             const stats = await sendToBot('get_stats');
             if (stats) {
@@ -528,6 +555,14 @@
                     `${stats.month_hours}h ${stats.month_minutes}m`;
                 document.getElementById('monthKm').textContent = 
                     `${stats.month_km} km`;
+                
+                // Controlla se bloccato
+                if (stats.blocked) {
+                    document.getElementById('mainMenu').style.display = 'none';
+                    document.getElementById('submenu1').style.display = 'none';
+                    document.getElementById('submenu2').style.display = 'none';
+                    showMessage('⚠️ Timesheet bloccato fino alle 23:59', 'info');
+                }
             }
         }
 
