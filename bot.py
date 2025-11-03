@@ -1,81 +1,6 @@
-def get_user_state(user_id):
-    """Recupera lo stato dell'utente dal database"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('SELECT start_time, blocked_until FROM user_state WHERE user_id = %s', (user_id,))
-        row = cursor.fetchone()
-        
-        if row:
-            start_time = row['start_time']
-            if start_time and start_time.tzinfo is None:
-                start_time = TZ.localize(start_time)
-            
-            blocked_until = row['blocked_until']
-            if blocked_until and blocked_until.tzinfo is None:
-                blocked_until = TZ.localize(blocked_until)
-            
-            return {'start_time': start_time, 'blocked_until': blocked_until}
-        return {'start_time': None, 'blocked_until': None}
-
-def set_user_start_time(user_id, start_time):
-    """Imposta il tempo di inizio per l'utente"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO user_state (user_id, start_time) 
-            VALUES (%s, %s)
-            ON CONFLICT(user_id) DO UPDATE SET start_time = EXCLUDED.start_time
-        ''', (user_id, start_time))
-        conn.commit()
-
-def set_user_blocked_until(user_id, blocked_until):
-    """Imposta il blocco dell'utente"""
-    with get_db() as conn:
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO user_state (user_id, blocked_until) 
-            VALUES (%s, %s)
-            ON CONFLICT(user_id) DO UPDATE SET blocked_until = EXCLUDED.blocked_until
-        ''', (user_id, blocked_until))
-        conn.commit()
-
-def is_blocked(user_id):
-    """Controlla se l'utente è bloccato"""
-    state = get_user_state(user_id)
-    blocked_until = state['blocked_until']
-    
-    if blocked_until:
-        now = get_current_time()
-        if now < blocked_until:
-            return True
-        else:
-            set_user_blocked_until(user_id, None)
-    return False
-
-def get_main_menu_keyboard():
-    """Crea la tastiera del menu principale"""
-    keyboard = [
-        [KeyboardButton("INIZIO")],
-        [KeyboardButton("MALATTIA")],
-        [KeyboardButton("FERIE")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_submenu1_keyboard():
-    """Crea la tastiera del sottomenu1"""
-    keyboard = [
-        [KeyboardButton("FINE")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-def get_submenu2_keyboard():
-    """Crea la tastiera del sottomenu2"""
-    keyboard = [
-        [KeyboardButton("INIZIO"), KeyboardButton("GIORNATA")]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)import logging
+import logging
 from datetime import datetime, timedelta, time
-from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import pytz
 import math
@@ -85,7 +10,6 @@ from psycopg2.extras import RealDictCursor
 from contextlib import contextmanager
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import asyncio
 from threading import Thread
 
 # Configurazione logging
@@ -178,6 +102,83 @@ def format_date(dt):
 def round_to_quarter(minutes):
     """Arrotonda i minuti al quarto d'ora più vicino"""
     return math.ceil(minutes / 15) * 15
+
+def get_user_state(user_id):
+    """Recupera lo stato dell'utente dal database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT start_time, blocked_until FROM user_state WHERE user_id = %s', (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            start_time = row['start_time']
+            if start_time and start_time.tzinfo is None:
+                start_time = TZ.localize(start_time)
+            
+            blocked_until = row['blocked_until']
+            if blocked_until and blocked_until.tzinfo is None:
+                blocked_until = TZ.localize(blocked_until)
+            
+            return {'start_time': start_time, 'blocked_until': blocked_until}
+        return {'start_time': None, 'blocked_until': None}
+
+def set_user_start_time(user_id, start_time):
+    """Imposta il tempo di inizio per l'utente"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_state (user_id, start_time) 
+            VALUES (%s, %s)
+            ON CONFLICT(user_id) DO UPDATE SET start_time = EXCLUDED.start_time
+        ''', (user_id, start_time))
+        conn.commit()
+
+def set_user_blocked_until(user_id, blocked_until):
+    """Imposta il blocco dell'utente"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_state (user_id, blocked_until) 
+            VALUES (%s, %s)
+            ON CONFLICT(user_id) DO UPDATE SET blocked_until = EXCLUDED.blocked_until
+        ''', (user_id, blocked_until))
+        conn.commit()
+
+def is_blocked(user_id):
+    """Controlla se l'utente è bloccato"""
+    state = get_user_state(user_id)
+    blocked_until = state['blocked_until']
+    
+    if blocked_until:
+        now = get_current_time()
+        if now < blocked_until:
+            return True
+        else:
+            set_user_blocked_until(user_id, None)
+    return False
+
+def get_main_menu_keyboard():
+    """Crea la tastiera del menu principale"""
+    keyboard = [
+        [KeyboardButton("INIZIO")],
+        [KeyboardButton("MALATTIA")],
+        [KeyboardButton("FERIE")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_submenu1_keyboard():
+    """Crea la tastiera del sottomenu1"""
+    keyboard = [
+        [KeyboardButton("FINE")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_submenu2_keyboard():
+    """Crea la tastiera del sottomenu2"""
+    keyboard = [
+        [KeyboardButton("INIZIO"), KeyboardButton("GIORNATA")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 def save_work_session(user_id, date_str, minutes):
     """Salva una sessione di lavoro"""
@@ -335,7 +336,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start - mostra menu e Mini App"""
     user_id = update.effective_user.id
     
-    # Imposta il pulsante menu per la Mini App
     await context.bot.set_chat_menu_button(
         chat_id=user_id,
         menu_button=MenuButtonWebApp(
@@ -344,7 +344,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
     
-    # Mostra anche la tastiera con i bottoni
     await update.message.reply_text(
         "✅ Bot inizializzato!\n\n"
         "Hai DUE modi per usare il bot:\n\n"
@@ -563,20 +562,16 @@ def run_bot():
     """Avvia il bot Telegram"""
     application = Application.builder().token(TOKEN).build()
     
-    # Handler comandi
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler("km", km_command))
     application.add_handler(CommandHandler("cals", cals_command))
     application.add_handler(CommandHandler("calm", calm_command))
     application.add_handler(CommandHandler("kmm", kmm_command))
-    
-    # Handler per i bottoni della tastiera
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     
     print("✅ Bot Telegram avviato!")
     
-    # Usa run_polling con configurazione corretta per Render
     application.run_polling(
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
@@ -588,11 +583,9 @@ def main():
     print("🚀 Inizializzazione servizi...")
     init_database()
     
-    # Avvia il bot in un thread separato
     bot_thread = Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # Avvia Flask (Gunicorn lo gestirà in produzione)
     port = int(os.environ.get('PORT', 10000))
     print(f"✅ API Flask avviata sulla porta {port}")
     print(f"📱 Mini App URL: {MINI_APP_URL}")
