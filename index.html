@@ -340,7 +340,7 @@
         // Funzione per inviare dati al bot
         async function sendToBot(action, data = {}) {
             try {
-                const response = await fetch('https://telegram-bot-render-317e.onrender.com', {
+                const response = await fetch('https://telegram-bot-render-317e.onrender.com/api/action', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
