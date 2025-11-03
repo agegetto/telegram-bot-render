@@ -1,7 +1,82 @@
-import logging
+def get_user_state(user_id):
+    """Recupera lo stato dell'utente dal database"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('SELECT start_time, blocked_until FROM user_state WHERE user_id = %s', (user_id,))
+        row = cursor.fetchone()
+        
+        if row:
+            start_time = row['start_time']
+            if start_time and start_time.tzinfo is None:
+                start_time = TZ.localize(start_time)
+            
+            blocked_until = row['blocked_until']
+            if blocked_until and blocked_until.tzinfo is None:
+                blocked_until = TZ.localize(blocked_until)
+            
+            return {'start_time': start_time, 'blocked_until': blocked_until}
+        return {'start_time': None, 'blocked_until': None}
+
+def set_user_start_time(user_id, start_time):
+    """Imposta il tempo di inizio per l'utente"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_state (user_id, start_time) 
+            VALUES (%s, %s)
+            ON CONFLICT(user_id) DO UPDATE SET start_time = EXCLUDED.start_time
+        ''', (user_id, start_time))
+        conn.commit()
+
+def set_user_blocked_until(user_id, blocked_until):
+    """Imposta il blocco dell'utente"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO user_state (user_id, blocked_until) 
+            VALUES (%s, %s)
+            ON CONFLICT(user_id) DO UPDATE SET blocked_until = EXCLUDED.blocked_until
+        ''', (user_id, blocked_until))
+        conn.commit()
+
+def is_blocked(user_id):
+    """Controlla se l'utente è bloccato"""
+    state = get_user_state(user_id)
+    blocked_until = state['blocked_until']
+    
+    if blocked_until:
+        now = get_current_time()
+        if now < blocked_until:
+            return True
+        else:
+            set_user_blocked_until(user_id, None)
+    return False
+
+def get_main_menu_keyboard():
+    """Crea la tastiera del menu principale"""
+    keyboard = [
+        [KeyboardButton("INIZIO")],
+        [KeyboardButton("MALATTIA")],
+        [KeyboardButton("FERIE")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_submenu1_keyboard():
+    """Crea la tastiera del sottomenu1"""
+    keyboard = [
+        [KeyboardButton("FINE")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+def get_submenu2_keyboard():
+    """Crea la tastiera del sottomenu2"""
+    keyboard = [
+        [KeyboardButton("INIZIO"), KeyboardButton("GIORNATA")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)import logging
 from datetime import datetime, timedelta, time
-from telegram import Update, MenuButtonWebApp, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 import pytz
 import math
 import os
@@ -257,29 +332,33 @@ def health():
 
 # Comandi Telegram
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start - apre la Mini App"""
+    """Comando /start - mostra menu e Mini App"""
     user_id = update.effective_user.id
     
+    # Imposta il pulsante menu per la Mini App
     await context.bot.set_chat_menu_button(
         chat_id=user_id,
         menu_button=MenuButtonWebApp(
-            text="Apri Timesheet",
+            text="📱 Mini App",
             web_app=WebAppInfo(url=MINI_APP_URL)
         )
     )
     
+    # Mostra anche la tastiera con i bottoni
     await update.message.reply_text(
         "✅ Bot inizializzato!\n\n"
-        "Clicca sul pulsante menu (☰) in basso a sinistra per aprire la Mini App.\n\n"
-        "Oppure usa questo link:",
-        reply_markup=None
+        "Hai DUE modi per usare il bot:\n\n"
+        "1️⃣ **Usa i bottoni qui sotto** (tastiera)\n"
+        "2️⃣ **Apri la Mini App** (clicca ☰ in basso a sinistra)\n\n"
+        "Scegli quello che preferisci! 🚀",
+        reply_markup=get_main_menu_keyboard()
     )
-    
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-    keyboard = [[InlineKeyboardButton("🚀 Apri Timesheet", web_app=WebAppInfo(url=MINI_APP_URL))]]
+
+async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /menu - mostra di nuovo la tastiera"""
     await update.message.reply_text(
-        "Clicca qui per aprire:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        "🎛️ Ecco il menu:",
+        reply_markup=get_main_menu_keyboard()
     )
 
 async def cals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -365,14 +444,135 @@ async def kmm_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = "\n".join(message_lines)
     await update.message.reply_text(message)
 
+async def km_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /km <numero> [comune]"""
+    if not context.args or len(context.args) < 1:
+        await update.message.reply_text(
+            "❌ Usa il comando così: /km <numero> [comune]\n"
+            "Es: /km 45.5 Bologna\n"
+            "Se non specifichi il comune, viene usato 'Imola'"
+        )
+        return
+    
+    try:
+        km_value = float(context.args[0])
+        comune = " ".join(context.args[1:]) if len(context.args) > 1 else "Imola"
+        
+        user_id = update.effective_user.id
+        now = get_current_time()
+        date_str = format_date(now)
+        
+        save_km_record(user_id, date_str, km_value, comune)
+        
+        await update.message.reply_text(f"🚗 {date_str} {km_value} KM - {comune}")
+    except ValueError:
+        await update.message.reply_text("❌ Il numero inserito non è valido")
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gestisce i messaggi dai bottoni della tastiera"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    if is_blocked(user_id):
+        await update.message.reply_text(
+            "❌ Sei bloccato fino alle 23:59 di oggi.",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        return
+    
+    if text == "INIZIO":
+        now = get_current_time()
+        set_user_start_time(user_id, now)
+        
+        await update.message.reply_text(
+            f"⏰ INIZIO: {format_date(now)} {now.strftime('%H:%M')}",
+            reply_markup=get_submenu1_keyboard()
+        )
+    
+    elif text == "MALATTIA":
+        now = get_current_time()
+        date_str = format_date(now)
+        
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
+        save_absence(user_id, date_str, 'MALATTIA')
+        
+        await update.message.reply_text(
+            f"🏥 {date_str} MALATTIA\n\n⚠️ Bloccato fino alle 23:59",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    
+    elif text == "FERIE":
+        now = get_current_time()
+        date_str = format_date(now)
+        
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
+        save_absence(user_id, date_str, 'FERIE')
+        
+        await update.message.reply_text(
+            f"🏖️ {date_str} FERIE\n\n⚠️ Bloccato fino alle 23:59",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    
+    elif text == "FINE":
+        state = get_user_state(user_id)
+        start_time = state['start_time']
+        
+        if not start_time:
+            await update.message.reply_text(
+                "❌ Devi prima premere INIZIO!",
+                reply_markup=get_main_menu_keyboard()
+            )
+            return
+        
+        now = get_current_time()
+        elapsed = (now - start_time).total_seconds() / 60
+        rounded_minutes = round_to_quarter(elapsed)
+        
+        date_str = format_date(now)
+        save_work_session(user_id, date_str, rounded_minutes)
+        
+        set_user_start_time(user_id, None)
+        
+        hours = rounded_minutes // 60
+        minutes = rounded_minutes % 60
+        
+        await update.message.reply_text(
+            f"⏱️ FINE: Tempo trascorso {int(hours)}h {int(minutes)}m",
+            reply_markup=get_submenu2_keyboard()
+        )
+    
+    elif text == "GIORNATA":
+        now = get_current_time()
+        date_str = format_date(now)
+        
+        daily_minutes = get_daily_minutes(user_id, date_str)
+        hours = daily_minutes // 60
+        minutes = daily_minutes % 60
+        
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
+        
+        await update.message.reply_text(
+            f"📅 {date_str}\nTotale giornata: {int(hours)}h {int(minutes)}m\n\n⚠️ Bloccato fino alle 23:59",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
 def run_bot():
     """Avvia il bot Telegram"""
     application = Application.builder().token(TOKEN).build()
     
+    # Handler comandi
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", menu_command))
+    application.add_handler(CommandHandler("km", km_command))
     application.add_handler(CommandHandler("cals", cals_command))
     application.add_handler(CommandHandler("calm", calm_command))
     application.add_handler(CommandHandler("kmm", kmm_command))
+    
+    # Handler per i bottoni della tastiera
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     
     print("✅ Bot Telegram avviato!")
     
