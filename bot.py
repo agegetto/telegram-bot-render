@@ -336,6 +336,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start - mostra menu e Mini App"""
     user_id = update.effective_user.id
     
+    # Imposta il pulsante menu per la Mini App
     await context.bot.set_chat_menu_button(
         chat_id=user_id,
         menu_button=MenuButtonWebApp(
@@ -344,19 +345,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     )
     
+    # Mostra la tastiera con i bottoni
     await update.message.reply_text(
         "✅ Bot inizializzato!\n\n"
         "Hai DUE modi per usare il bot:\n\n"
-        "1️⃣ **Usa i bottoni qui sotto** (tastiera)\n"
-        "2️⃣ **Apri la Mini App** (clicca ☰ in basso a sinistra)\n\n"
+        "1️⃣ <b>Usa i bottoni qui sotto</b> (tastiera)\n"
+        "2️⃣ <b>Apri la Mini App</b> (clicca ☰ menu in basso)\n\n"
         "Scegli quello che preferisci! 🚀",
-        reply_markup=get_main_menu_keyboard()
+        reply_markup=get_main_menu_keyboard(),
+        parse_mode='HTML'
     )
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /menu - mostra di nuovo la tastiera"""
     await update.message.reply_text(
-        "🎛️ Ecco il menu:",
+        "🎛️ Ecco il menu con i bottoni:",
         reply_markup=get_main_menu_keyboard()
     )
 
