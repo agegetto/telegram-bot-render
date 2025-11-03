@@ -315,6 +315,9 @@ def handle_action():
         month_minutes = get_monthly_minutes(user_id)
         month_km = get_monthly_km(user_id)
         
+        # Controlla se bloccato
+        blocked = is_blocked(user_id)
+        
         response.update({
             'today_hours': today_minutes // 60,
             'today_minutes': today_minutes % 60,
@@ -322,7 +325,8 @@ def handle_action():
             'week_minutes': week_minutes % 60,
             'month_hours': month_minutes // 60,
             'month_minutes': month_minutes % 60,
-            'month_km': month_km if month_km else 0
+            'month_km': month_km if month_km else 0,
+            'blocked': blocked
         })
     
     return jsonify(response)
@@ -530,6 +534,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         now = get_current_time()
+        
+        # Assicura che entrambi abbiano timezone
+        if start_time.tzinfo is None:
+            start_time = TZ.localize(start_time)
+        
         elapsed = (now - start_time).total_seconds() / 60
         rounded_minutes = round_to_quarter(elapsed)
         
@@ -542,7 +551,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         minutes = rounded_minutes % 60
         
         await update.message.reply_text(
-            f"⏱️ FINE: Tempo trascorso {int(hours)}h {int(minutes)}m",
+            f"⏱️ FINE: Tempo trascorso {int(hours)}h {int(minutes)}m\n(Da {start_time.strftime('%H:%M')} a {now.strftime('%H:%M')})",
             reply_markup=get_submenu2_keyboard()
         )
     
