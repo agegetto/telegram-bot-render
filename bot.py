@@ -56,17 +56,27 @@ def get_user_state(user_id):
         row = cursor.fetchone()
         if row:
             start_time = row['start_time']
-            if start_time and start_time.tzinfo is None:
-                start_time = TZ.localize(start_time)
+            if start_time:
+                # Sempre considera come timezone italiano
+                if start_time.tzinfo is None:
+                    start_time = TZ.localize(start_time)
+                else:
+                    start_time = start_time.astimezone(TZ)
             blocked_until = row['blocked_until']
-            if blocked_until and blocked_until.tzinfo is None:
-                blocked_until = TZ.localize(blocked_until)
+            if blocked_until:
+                if blocked_until.tzinfo is None:
+                    blocked_until = TZ.localize(blocked_until)
+                else:
+                    blocked_until = blocked_until.astimezone(TZ)
             return {'start_time': start_time, 'blocked_until': blocked_until}
         return {'start_time': None, 'blocked_until': None}
 
 def set_user_start_time(user_id, start_time):
     with get_db() as conn:
         cursor = conn.cursor()
+        # Rimuovi timezone prima di salvare per evitare conflitti
+        if start_time and start_time.tzinfo:
+            start_time = start_time.replace(tzinfo=None)
         cursor.execute('INSERT INTO user_state (user_id, start_time) VALUES (%s, %s) ON CONFLICT(user_id) DO UPDATE SET start_time = EXCLUDED.start_time', (user_id, start_time))
         conn.commit()
 
@@ -164,33 +174,45 @@ def handle_action():
     date_str = format_date(now)
     response = {'success': True}
     
-    if action == 'fine':
+    if action == 'inizio':
+        set_user_start_time(user_id, now)
+        response['message'] = 'Inizio registrato'
+    elif action == 'fine':
         minutes = action_data.get('minutes')
         save_work_session(user_id, date_str, minutes)
+        set_user_start_time(user_id, None)
         response['message'] = f'Salvato: {minutes // 60}h {minutes % 60}m'
     elif action == 'giornata':
         daily_minutes = get_daily_minutes(user_id, date_str)
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
         response['hours'] = daily_minutes // 60
         response['minutes'] = daily_minutes % 60
     elif action == 'malattia':
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
         save_absence(user_id, date_str, 'MALATTIA')
     elif action == 'ferie':
+        end_of_day = now.replace(hour=23, minute=59, second=59)
+        set_user_blocked_until(user_id, end_of_day)
         save_absence(user_id, date_str, 'FERIE')
     elif action == 'km':
         km = action_data.get('km')
         comune = action_data.get('comune', 'Imola')
         save_km_record(user_id, date_str, km, comune)
     elif action == 'get_stats':
+        state = get_user_state(user_id)
         today_minutes = get_daily_minutes(user_id, date_str)
         week_minutes = get_weekly_minutes(user_id)
         month_minutes = get_monthly_minutes(user_id)
         month_km = get_monthly_km(user_id)
         blocked = is_blocked(user_id)
+        has_start = state['start_time'] is not None
         response.update({
             'today_hours': today_minutes // 60, 'today_minutes': today_minutes % 60,
             'week_hours': week_minutes // 60, 'week_minutes': week_minutes % 60,
             'month_hours': month_minutes // 60, 'month_minutes': month_minutes % 60,
-            'month_km': month_km if month_km else 0, 'blocked': blocked
+            'month_km': month_km if month_km else 0, 'blocked': blocked, 'has_start': has_start
         })
     return jsonify(response)
 
