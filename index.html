@@ -340,7 +340,7 @@
         // Funzione per inviare dati al bot
         async function sendToBot(action, data = {}) {
             try {
-                const response = await fetch('https://telegram-bot-render-317e.onrender.com/api/action', {
+                const response = await fetch('YOUR_BOT_API_URL', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -556,12 +556,23 @@
                 document.getElementById('monthKm').textContent = 
                     `${stats.month_km} km`;
                 
-                // Controlla se bloccato
+                // Sincronizza stato
                 if (stats.blocked) {
                     document.getElementById('mainMenu').style.display = 'none';
                     document.getElementById('submenu1').style.display = 'none';
                     document.getElementById('submenu2').style.display = 'none';
                     showMessage('⚠️ Timesheet bloccato fino alle 23:59', 'info');
+                } else if (stats.has_start) {
+                    // Qualcuno ha premuto INIZIO (da bottoni o miniapp)
+                    showMenu('submenu1');
+                } else {
+                    // Stato normale
+                    const menu1 = document.getElementById('mainMenu').style.display;
+                    const menu2 = document.getElementById('submenu1').style.display;
+                    const menu3 = document.getElementById('submenu2').style.display;
+                    if (menu1 === 'none' && menu2 === 'none' && menu3 === 'none') {
+                        showMenu('main');
+                    }
                 }
             }
         }
