@@ -1,4 +1,74 @@
-import logging
+async def reset_oggi_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /resetoggi - cancella dati di oggi"""
+    user_id = update.effective_user.id
+    now = get_current_time()
+    date_str = format_date(now)
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        # Cancella sessioni oggi
+        cursor.execute('DELETE FROM work_sessions WHERE user_id = %s AND date = %s', (user_id, date_str))
+        ws = cursor.rowcount
+        
+        # Cancella km oggi
+        cursor.execute('DELETE FROM km_records WHERE user_id = %s AND date = %s', (user_id, date_str))
+        km = cursor.rowcount
+        
+        # Cancella assenze oggi
+        cursor.execute('DELETE FROM absences WHERE user_id = %s AND date = %s', (user_id, date_str))
+        ab = cursor.rowcount
+        
+        # Reset stato
+        cursor.execute('DELETE FROM user_state WHERE user_id = %s', (user_id,))
+        
+        conn.commit()
+    
+    await update.message.reply_text(
+        f"🗑️ Dati di oggi cancellati:\n"
+        f"• {ws} sessioni lavoro\n"
+        f"• {km} record km\n"
+        f"• {ab} assenze",
+        reply_markup=get_main_menu_keyboard()
+    )
+
+async def reset_tutto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando /resettutto - cancella TUTTI i dati"""
+    user_id = update.effective_user.id
+    
+    # Conferma richiesta
+    if not context.args or context.args[0] != 'CONFERMA':
+        await update.message.reply_text(
+            "⚠️ ATTENZIONE: Questo cancellerà TUTTI i tuoi dati!\n\n"
+            "Per confermare digita:\n"
+            "/resettutto CONFERMA"
+        )
+        return
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        
+        cursor.execute('DELETE FROM work_sessions WHERE user_id = %s', (user_id,))
+        ws = cursor.rowcount
+        
+        cursor.execute('DELETE FROM km_records WHERE user_id = %s', (user_id,))
+        km = cursor.rowcount
+        
+        cursor.execute('DELETE FROM absences WHERE user_id = %s', (user_id,))
+        ab = cursor.rowcount
+        
+        cursor.execute('DELETE FROM user_state WHERE user_id = %s', (user_id,))
+        
+        conn.commit()
+    
+    await update.message.reply_text(
+        f"🗑️ TUTTI i dati cancellati:\n"
+        f"• {ws} sessioni lavoro\n"
+        f"• {km} record km\n"
+        f"• {ab} assenze\n\n"
+        "✅ Database pulito!",
+        reply_markup=get_main_menu_keyboard()
+    )import logging
 from datetime import datetime, timedelta
 from telegram import Update, MenuButtonWebApp, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -492,7 +562,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         set_user_start_time(user_id, now)
         
         await update.message.reply_text(
-            f"⏰ INIZIO: {format_date(now)} {now.strftime('%H:%M')}",
+            f"⏰ INIZIO: {now.strftime('%H:%M')}",
             reply_markup=get_submenu1_keyboard()
         )
     
@@ -588,6 +658,8 @@ def main():
         application.add_handler(CommandHandler("cals", cals_command))
         application.add_handler(CommandHandler("calm", calm_command))
         application.add_handler(CommandHandler("kmm", kmm_command))
+        application.add_handler(CommandHandler("resetoggi", reset_oggi_command))
+        application.add_handler(CommandHandler("resettutto", reset_tutto_command))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
         
         port = int(os.environ.get('PORT', 10000))
